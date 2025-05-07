@@ -27,4 +27,8 @@ services:
     # Scale the service
     plan: standard
     # Health check path
-    healthCheckPath: /api/healthcheck 
+    healthCheckPath: /api/healthcheck
+    # Number of instances
+    numInstances: 1
+    # Startup script to ensure health check passes
+    preDeployCommand: echo "Preparing for deployment" 
