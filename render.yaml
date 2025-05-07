@@ -3,7 +3,7 @@ services:
   - type: web
     name: aetherlms
     runtime: node
-    buildCommand: rm -rf .next node_modules/.cache && npm ci --include=dev && npm run build:safe
+    buildCommand: rm -rf .next node_modules/.cache && npm ci --production=false && npm run build:safe
     startCommand: npm run start
     envVars:
       - key: PORT
