@@ -8,7 +8,7 @@
     "start": "next start -p ${PORT:-3000}",
     "lint": "next lint",
     "deploy": "node deploy.js",
-    "build:safe": "cross-env SKIP_DB_CHECK=true BUILD_MODE=static next build"
+    "build:safe": "cross-env SKIP_DB_CHECK=true BUILD_MODE=static npm install --include=dev postcss tailwindcss tailwindcss-animate && next build"
   },
   "dependencies": {
     "@clerk/nextjs": "^5.7.1",
