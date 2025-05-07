@@ -37,7 +37,9 @@ const publicRoutes = [
   '/design-system/(.*)',
   '/payment',
   '/verify-route',
-  '/db-error'
+  '/db-error',
+  // Add debug route
+  '/debug-server'
 ]
 
 // Define dynamic routes that shouldn't be statically generated
@@ -48,7 +50,8 @@ const dynamicRoutes = [
   '/api/courses',
   '/api/toggle-resilient-auth',
   '/api/auth',
-  '/api/database-check'
+  '/api/database-check',
+  '/api/healthcheck'
 ]
 
 // Function to check if a path is a public route
@@ -61,6 +64,7 @@ function isPathPublic(pathname: string): boolean {
     return route === pathname
   }) || 
   pathname.startsWith('/api/auth/') || 
+  pathname.startsWith('/api/healthcheck') ||
   pathname.startsWith('/db-error')
 }
 
@@ -94,12 +98,37 @@ export default authMiddleware({
   }
 })
 
-// Set cache headers for dynamic routes
+// Simple middleware for debugging purposes
 export function middleware(request: NextRequest) {
   const response = NextResponse.next()
+  const path = request.nextUrl.pathname
+  
+  // Debug endpoint that always returns 200
+  if (path === '/debug-server') {
+    const debugResponse = new NextResponse(
+      JSON.stringify({
+        status: 'ok',
+        message: 'Server is running',
+        timestamp: new Date().toISOString(),
+        headers: Object.fromEntries(request.headers.entries()),
+        url: request.url,
+        nextUrl: {
+          pathname: request.nextUrl.pathname,
+          search: request.nextUrl.search,
+        }
+      }),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store'
+        }
+      }
+    )
+    return debugResponse
+  }
   
   // Add a custom header to prevent static generation for dynamic routes
-  const path = request.nextUrl.pathname
   if (dynamicRoutes.some(route => path.startsWith(route))) {
     response.headers.set('cache-control', 'no-store, must-revalidate')
     response.headers.set('x-middleware-cache', 'no-cache')

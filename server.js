@@ -39,7 +39,18 @@ const createEarlyHealthCheckServer = () => {
 };
 
 // Create the Next.js app
-const app = next({ dev });
+const app = next({ 
+  dev,
+  hostname,
+  port,
+  // Increase timeout for slow operations
+  conf: {
+    serverRuntimeConfig: {
+      pageLoadTimeout: 60000, // 60 seconds
+    }
+  }
+});
+
 const handle = app.getRequestHandler();
 
 // Graceful shutdown function
@@ -55,6 +66,23 @@ const gracefulShutdown = (server, exitCode = 0) => {
     console.log('Force closing server after timeout');
     process.exit(exitCode);
   }, 10000);
+};
+
+// Utility function to log errors with request details
+const logRequestError = (req, err) => {
+  const timestamp = new Date().toISOString();
+  const method = req.method || 'UNKNOWN';
+  const url = req.url || 'UNKNOWN';
+  const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'UNKNOWN';
+  const userAgent = req.headers['user-agent'] || 'UNKNOWN';
+  
+  console.error(`[${timestamp}] ERROR handling ${method} ${url}`);
+  console.error(`[${timestamp}] IP: ${ip}, UA: ${userAgent}`);
+  console.error(`[${timestamp}] Error details:`, err);
+  
+  if (err.stack) {
+    console.error(`[${timestamp}] Stack trace:`, err.stack);
+  }
 };
 
 // Main server startup function with error handling
@@ -84,6 +112,10 @@ async function startServer() {
     // Create the HTTP server
     console.log(`[${new Date().toISOString()}] Creating main HTTP server...`);
     const server = createServer(async (req, res) => {
+      // Set timeout to prevent hanging requests
+      req.setTimeout(30000);
+      res.setTimeout(30000);
+      
       try {
         // Basic request logging in production
         if (process.env.NODE_ENV === 'production') {
@@ -101,7 +133,10 @@ async function startServer() {
         
         // Health check endpoint for Render
         if (parsedUrl.pathname === '/api/healthcheck') {
-          console.log(`[${new Date().toISOString()}] Health check requested`);
+          // Reduce log spam for health checks
+          if (process.env.DEBUG_HEALTH_CHECKS === 'true') {
+            console.log(`[${new Date().toISOString()}] Health check requested`);
+          }
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ 
@@ -113,12 +148,40 @@ async function startServer() {
           return;
         }
         
-        // Let Next.js handle the request
-        await handle(req, res, parsedUrl);
+        // For non-health check requests, add a fallback error handler
+        // just in case Next.js doesn't respond in time
+        const timeoutId = setTimeout(() => {
+          if (!res.writableEnded) {
+            console.error(`[${new Date().toISOString()}] Request timeout for ${parsedUrl.pathname}`);
+            res.statusCode = 504;
+            res.end('Request timeout - server took too long to process your request');
+          }
+        }, 25000); // 25 second timeout
+        
+        try {
+          // Let Next.js handle the request
+          await handle(req, res, parsedUrl);
+        } catch (nextJsError) {
+          // Handle errors from Next.js
+          logRequestError(req, nextJsError);
+          
+          // Only respond if headers haven't been sent yet
+          if (!res.headersSent && !res.writableEnded) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'text/plain');
+            res.end('Internal Server Error - The application encountered an error processing your request');
+          }
+        } finally {
+          clearTimeout(timeoutId);
+        }
       } catch (err) {
-        console.error(`Error handling request: ${req.url}`, err);
-        res.statusCode = 500;
-        res.end('Internal Server Error');
+        // Handle top-level errors
+        logRequestError(req, err);
+        
+        if (!res.headersSent && !res.writableEnded) {
+          res.statusCode = 500;
+          res.end('Internal Server Error');
+        }
       }
     });
     
