@@ -4,7 +4,7 @@ services:
     name: aetherlms
     runtime: node
     buildCommand: rm -rf .next node_modules/.cache && npm ci --production=false && npm run build:safe
-    startCommand: npx next start -p $PORT
+    startCommand: node server.js
     envVars:
       - key: PORT
         value: 3000
