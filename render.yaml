@@ -27,4 +27,4 @@ services:
     # Scale the service
     plan: standard
     # Health check path
-    healthCheckPath: /api/database-check 
+    healthCheckPath: /api/healthcheck 
