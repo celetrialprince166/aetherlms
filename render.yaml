@@ -1,0 +1,30 @@
+services:
+  # Web service (main app)
+  - type: web
+    name: aetherlms
+    runtime: node
+    buildCommand: npm install && npm run build:safe
+    startCommand: npm run start
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+      - key: SKIP_DB_CHECK
+        value: "true"
+      - key: BUILD_MODE
+        value: "static"
+      - key: CLEAR_BUILD_CACHE
+        value: "true"
+      - key: DATABASE_URL
+        sync: false # Sensitive value, to be set in Render dashboard
+      - key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        sync: false # Sensitive value, to be set in Render dashboard
+      - key: CLERK_SECRET_KEY
+        sync: false # Sensitive value, to be set in Render dashboard
+    # Auto-deploy on changes to main branch
+    autoDeploy: true
+    # Scale the service
+    plan: standard
+    # Health check path
+    healthCheckPath: /api/database-check 
