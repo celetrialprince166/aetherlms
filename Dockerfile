@@ -1,81 +1,46 @@
-# STAGE 1: Dependencies
+# Stage 1: Install dependencies
 FROM node:20-alpine AS deps
 WORKDIR /app
-COPY package*.json ./
-COPY prisma ./prisma/
-RUN npm ci
 
-# STAGE 2: Builder (Baking all 20+ Variables)
+# Check for lockfile to ensure we have one
+COPY package*.json ./
+
+# USE CASE: If your build fails with "ERESOLVE unable to resolve dependency tree"
+# We switch from 'npm ci' to 'npm install' with the legacy flag
+RUN npm install --legacy-peer-deps
+
+# Stage 2: Build the app
 FROM node:20-alpine AS builder
 WORKDIR /app
-
-# --- MASSIVE INJECTION BLOCK ---
-# We define an ARG for every single variable in your .env
-ARG DATABASE_URL
-ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-ARG CLERK_SECRET_KEY
-ARG NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL
-ARG NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL
-ARG CLERK_ALLOW_CLOCK_SKEW
-ARG WIX_OAUTH_KEY
-ARG OPEN_AI_KEY
-ARG NEXT_PUBLIC_VOICE_FLOW_KEY
-ARG VOICEFLOW_API_KEY
-ARG VOICEFLOW_KNOWLEDGE_BASE_API
-ARG NEXT_PUBLIC_HOST_URL
-ARG NEXT_PUBLIC_CLOUD_FRONT_STREAM_URL
-ARG NEXT_PUBLIC_EXPRESS_SERVER_URL
-ARG EXPRESS_SERVER_URL
-ARG MAILER_PASSWORD
-ARG MAILER_EMAIL
-ARG CLOUDINARY_CLOUD_NAME
-ARG CLOUDINARY_API_KEY
-ARG CLOUDINARY_API_SECRET
-
-# Set them as ENVs so 'npm run build' can see them
-ENV DATABASE_URL=$DATABASE_URL \
-    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
-    CLERK_SECRET_KEY=$CLERK_SECRET_KEY \
-    NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL=$NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL \
-    NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL=$NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL \
-    CLERK_ALLOW_CLOCK_SKEW=$CLERK_ALLOW_CLOCK_SKEW \
-    WIX_OAUTH_KEY=$WIX_OAUTH_KEY \
-    OPEN_AI_KEY=$OPEN_AI_KEY \
-    NEXT_PUBLIC_VOICE_FLOW_KEY=$NEXT_PUBLIC_VOICE_FLOW_KEY \
-    VOICEFLOW_API_KEY=$VOICEFLOW_API_KEY \
-    VOICEFLOW_KNOWLEDGE_BASE_API=$VOICEFLOW_KNOWLEDGE_BASE_API \
-    NEXT_PUBLIC_HOST_URL=$NEXT_PUBLIC_HOST_URL \
-    NEXT_PUBLIC_CLOUD_FRONT_STREAM_URL=$NEXT_PUBLIC_CLOUD_FRONT_STREAM_URL \
-    NEXT_PUBLIC_EXPRESS_SERVER_URL=$NEXT_PUBLIC_EXPRESS_SERVER_URL \
-    EXPRESS_SERVER_URL=$EXPRESS_SERVER_URL \
-    MAILER_PASSWORD=$MAILER_PASSWORD \
-    MAILER_EMAIL=$MAILER_EMAIL \
-    CLOUDINARY_CLOUD_NAME=$CLOUDINARY_CLOUD_NAME \
-    CLOUDINARY_API_KEY=$CLOUDINARY_API_KEY \
-    CLOUDINARY_API_SECRET=$CLOUDINARY_API_SECRET \
-    SKIP_DB_CHECK=true \
-    NODE_ENV=production
-
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Environment variables for build time
+ARG DATABASE_URL
+ENV DATABASE_URL=$DATABASE_URL
+ENV SKIP_DB_CHECK=true
+ENV BUILD_MODE=static
+
+# Generate Prisma Client (Important if using RDS)
 RUN npx prisma generate
+
 RUN npm run build:safe
 
-# STAGE 3: Runner (Minimal Production Image)
+# Stage 3: Production Runner
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Re-inject the RUNTIME variables (Non-public ones like Database)
-ARG DATABASE_URL
-ENV DATABASE_URL=$DATABASE_URL
-
+# Security: Don't run as root
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+
+# Standard Next.js Standalone configuration
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
 EXPOSE 3000
+ENV PORT 3000
+
 CMD ["node", "server.js"]
