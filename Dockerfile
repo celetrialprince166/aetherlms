@@ -17,17 +17,22 @@ WORKDIR /app
 # 1. DISABLE TELEMETRY
 ENV NEXT_TELEMETRY_DISABLED 1
 
-# 2. PROVIDE DUMMY VARS (Prevents crashes during "evaluation")
-# These are just strings so the build doesn't "fail to collect data"
+# Stage 2: Builder
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+ENV NEXT_TELEMETRY_DISABLED 1
+
+# Provide valid Base64 dummy strings (the string "dummy" encoded is "ZHVtbXk=")
 ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
-ENV CLERK_SECRET_KEY="sk_test_dummy"
-ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_dummy"
-ENV OPEN_AI_KEY="dummy"
+ENV CLERK_SECRET_KEY="ZHVtbXk=" 
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="ZHVtbXk="
+ENV OPEN_AI_KEY="ZHVtbXk="
+ENV CLOUDINARY_API_SECRET="ZHVtbXk="
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# 3. Generate Prisma client (must happen before build)
 RUN npx prisma generate
 
 # 4. RUN THE BUILD
