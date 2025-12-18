@@ -1,0 +1,72 @@
+name: Production Deployment
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # Replace 'your-repo-name' with your actual Docker Hub repo name
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/aether-lms:latest
+          build-args: |
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+            CLERK_SECRET_KEY=${{ secrets.CLERK_SECRET_KEY }}
+            WIX_OAUTH_KEY=${{ secrets.WIX_OAUTH_KEY }}
+            OPEN_AI_KEY=${{ secrets.OPEN_AI_KEY }}
+            NEXT_PUBLIC_VOICE_FLOW_KEY=${{ secrets.NEXT_PUBLIC_VOICE_FLOW_KEY }}
+            VOICEFLOW_API_KEY=${{ secrets.VOICEFLOW_API_KEY }}
+            VOICEFLOW_KNOWLEDGE_BASE_API=${{ secrets.VOICEFLOW_KNOWLEDGE_BASE_API }}
+            CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }}
+            CLOUDINARY_API_KEY=${{ secrets.CLOUDINARY_API_KEY }}
+            CLOUDINARY_API_SECRET=${{ secrets.CLOUDINARY_API_SECRET }}
+            MAILER_EMAIL=${{ secrets.MAILER_EMAIL }}
+            MAILER_PASSWORD=${{ secrets.MAILER_PASSWORD }}
+            NEXT_PUBLIC_HOST_URL=${{ secrets.NEXT_PUBLIC_HOST_URL }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Private EC2 via Bastion
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.BASTION_PUBLIC_IP }}
+          username: ec2-user
+          key: ${{ secrets.BASTION_PRIVATE_KEY }}
+          script: |
+            # 1. SSH from Bastion into the App Server in Private Subnet
+            ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.APP_SERVER_PRIVATE_IP }} << 'EOF'
+              # 2. Authenticate and update the container
+              docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+              docker pull ${{ secrets.DOCKERHUB_USERNAME }}/aether-lms:latest
+              
+              # 3. Stop old version, start new version
+              docker stop app || true
+              docker rm app || true
+              
+              docker run -d \
+                --name app \
+                --restart always \
+                -p 3000:3000 \
+                ${{ secrets.DOCKERHUB_USERNAME }}/aether-lms:latest
+            EOF
